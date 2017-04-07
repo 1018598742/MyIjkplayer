@@ -1489,7 +1489,7 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
     /**
      * 控制进度条
      *
-     * @param v
+     * @param percent
      */
     private void _onProgressSlide(float percent) {
         // FIXME: 2017/4/3 进度条
