@@ -48,6 +48,7 @@ import com.example.myijkplayerup.R;
 import com.example.myijkplayerup.application.Settings;
 import com.example.myijkplayerup.services.MediaPlayerService;
 import com.example.myijkplayerup.util.LogUtil;
+import com.example.myijkplayerup.util.StringUtils;
 
 import java.io.File;
 import java.io.IOException;
@@ -67,6 +68,7 @@ import tv.danmaku.ijk.media.player.misc.ITrackInfo;
 import tv.danmaku.ijk.media.player.misc.IjkMediaFormat;
 
 import static com.example.myijkplayerup.util.StringUtils.generateTime;
+import static com.example.myijkplayerup.util.StringUtils.getFormatSize;
 
 
 public class IjkVideoView extends FrameLayout implements MediaController.MediaPlayerControl {
