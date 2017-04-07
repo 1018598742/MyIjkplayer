@@ -37,6 +37,7 @@ import java.util.Locale;
  */
 
 public class MediaController extends FrameLayout implements IMediaController {
+    private final String TAG = "MediaController" ;
     private ActionBar mActionBar;
     private MediaPlayerControl mPlayer;
     private FullsreenController mFullscreenController;
@@ -309,7 +310,6 @@ public class MediaController extends FrameLayout implements IMediaController {
         post(mShowProgress);
 
         if (timeout != 0 && !mAccessibilityManager.isTouchExplorationEnabled()) {//系统中触摸探索是否启用
-            LogUtil.i2("removeCallbacks==");
             removeCallbacks(mFadeOut);
             postDelayed(mFadeOut, timeout);
 
@@ -331,6 +331,7 @@ public class MediaController extends FrameLayout implements IMediaController {
     private final Runnable mFadeOut = new Runnable() {
         @Override
         public void run() {
+            LogUtil.i(TAG,"===mFadeOut==");
             hide();
         }
     };
@@ -339,6 +340,7 @@ public class MediaController extends FrameLayout implements IMediaController {
      * Remove the controller from the screen.
      */
     public void hide() {
+        LogUtil.i(TAG,"===hide==");
         if (mAnchor == null) {
             return;
         }
@@ -372,14 +374,16 @@ public class MediaController extends FrameLayout implements IMediaController {
         }
     };
 
-    private void updatePausePlay() {
+    public void updatePausePlay() {
         if (mRoot == null || mPauseButton == null) {
             return;
         }
         if (mPlayer.isPlaying()) {
+            LogUtil.i(TAG,"==updatePausePlay=true=");
             mPauseButton.setImageResource(R.mipmap.ic_media_pause);
             mPauseButton.setContentDescription(mPauseDescription);
         } else {
+            LogUtil.i(TAG,"==updatePausePlay=false=");
             mPauseButton.setImageResource(R.mipmap.ic_media_play);
             mPauseButton.setContentDescription(mPlayDescription);
         }

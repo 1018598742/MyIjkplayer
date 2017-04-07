@@ -124,6 +124,8 @@ public class VideoActivity extends AppCompatActivity implements MediaController.
 
         mVideoView = (IjkVideoView) findViewById(R.id.ijkVideoView);
         mVideoView.setMediaController(mMediaController);
+
+
 //        mVideoView.setHudView(mHudView);
         // prefer mVideoPath
 //        if (mVideoPath != null)
@@ -135,6 +137,7 @@ public class VideoActivity extends AppCompatActivity implements MediaController.
 //            finish();
 //            return;
 //        }
+
         mVideoView.setVideoPath("http://zv.3gv.ifeng.com/live/zhongwen800k.m3u8");
 
         mVideoView.start();
@@ -143,10 +146,12 @@ public class VideoActivity extends AppCompatActivity implements MediaController.
         mVideoView.setOnInfoListener(new IMediaPlayer.OnInfoListener() {
             @Override
             public boolean onInfo(IMediaPlayer iMediaPlayer, int i, int i1) {
+                LogUtil.i("VideoActivity","==VideoActivitymInfoListener==");
                 switch (i) {
                     case IMediaPlayer.MEDIA_INFO_BUFFERING_START:
+                        LogUtil.i("VideoActivity","==VideoActivityMEDIA_INFO_BUFFERING_START=="+mDataBinding.infoNet.getText());
                         mDataBinding.infoNet.setVisibility(View.VISIBLE);
-                        LogUtil.i("infoNewt===" + mDataBinding.infoNet.getText());
+
                         break;
                     case IMediaPlayer.MEDIA_INFO_BUFFERING_END:
                         mDataBinding.infoNet.setVisibility(View.GONE);
@@ -155,6 +160,7 @@ public class VideoActivity extends AppCompatActivity implements MediaController.
                 return true;
             }
         });
+        mVideoView.setTcpView(mDataBinding.infoNet);
     }
 
     @Override
@@ -183,7 +189,6 @@ public class VideoActivity extends AppCompatActivity implements MediaController.
     @Override
     protected void onStop() {
         super.onStop();
-
         if (mBackPressed || !mVideoView.isBackgroundPlayEnabled()) {
             mVideoView.stopPlayback();
             mVideoView.release(true);
@@ -217,9 +222,11 @@ public class VideoActivity extends AppCompatActivity implements MediaController.
     @Override
     public void fullscreen() {
         if (this.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
+            mVideoView.setHorizontalScreen(true);
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
 //            getActivity().setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         } else {
+            mVideoView.setHorizontalScreen(false);
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         }
     }

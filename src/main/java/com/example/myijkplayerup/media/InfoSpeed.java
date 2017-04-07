@@ -4,6 +4,8 @@ import android.os.Handler;
 import android.os.Message;
 import android.widget.TextView;
 
+import com.example.myijkplayerup.util.LogUtil;
+
 import java.util.Locale;
 
 import tv.danmaku.ijk.media.player.IMediaPlayer;
@@ -17,11 +19,18 @@ import static java.lang.String.format;
  */
 
 public class InfoSpeed {
+    private final String TAG = "InfoSpeed";
     private IMediaPlayer mMediaPlayer;
     private TextView mTextView;
     public InfoSpeed(IMediaPlayer mMediaPlayer,TextView mTextView){
         this.mTextView = mTextView;
         this.mMediaPlayer = mMediaPlayer;
+        if (mMediaPlayer != null) {
+            mHandler.sendEmptyMessageDelayed(MSG_UPDATE_HUD, 500);
+        } else {
+            mHandler.removeMessages(MSG_UPDATE_HUD);
+        }
+
     }
 
     private static final int MSG_UPDATE_HUD = 1;

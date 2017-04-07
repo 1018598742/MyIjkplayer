@@ -21,20 +21,26 @@ import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.res.Resources;
+import android.graphics.Color;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.support.annotation.NonNull;
 import android.support.v7.app.AlertDialog;
+import android.support.v7.app.AppCompatActivity;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.TableLayout;
 import android.widget.TextView;
 
@@ -60,13 +66,33 @@ import tv.danmaku.ijk.media.player.misc.IMediaFormat;
 import tv.danmaku.ijk.media.player.misc.ITrackInfo;
 import tv.danmaku.ijk.media.player.misc.IjkMediaFormat;
 
+import static com.example.myijkplayerup.util.StringUtils.generateTime;
+
 
 public class IjkVideoView extends FrameLayout implements MediaController.MediaPlayerControl {
+//    //无效值
+//    private final int INVALID_VALUE = -1;
+    private AppCompatActivity mAttachActivity;
+
+    private long mTargetPosition;
+    //当前亮度
+    private float currentBrightness;
+    private int maxVolum;
+    //当前音量
+    private int currentVolum;
+    //手势
+    private GestureDetector mGestureDetector;
+    //声音管理器
+    private AudioManager mAudioManager;
+    // 锁屏
+    private boolean mIsForbidTouch = false;
+    //横屏true
+    private boolean horizontalScreen;
+
     private String TAG = "IjkVideoView";
     // settable by the client
     private Uri mUri;
     private Map<String, String> mHeaders;
-
     // all possible internal states
     private static final int STATE_ERROR = -1;
     private static final int STATE_IDLE = 0;
@@ -104,6 +130,7 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
     private boolean mCanSeekBack = true;
     private boolean mCanSeekForward = true;
 
+
     /** Subtitle rendering widget overlaid on top of the video. */
     // private RenderingWidget mSubtitleWidget;
 
@@ -127,6 +154,11 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
     private long mSeekEndTime = 0;
 
     private TextView subtitleDisplay;
+    private TextView mCurrentNet;
+    private ImageView mVolumBrightness;
+    private ImageView mVProgressBar;
+    private View inflateSlide;
+
 
     public IjkVideoView(Context context) {
         super(context);
@@ -156,6 +188,11 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
 
     private void initVideoView(Context context) {
         mAppContext = context.getApplicationContext();
+        if (context instanceof AppCompatActivity) {
+            mAttachActivity = (AppCompatActivity) context;
+        }
+
+
         mSettings = new Settings(mAppContext);
 
         initBackground();
@@ -171,7 +208,7 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
         // REMOVED: mPendingSubtitleTracks = new Vector<Pair<InputStream, MediaFormat>>();
         mCurrentState = STATE_IDLE;
         mTargetState = STATE_IDLE;
-
+        //字幕显示
         subtitleDisplay = new TextView(context);
         subtitleDisplay.setTextSize(24);
         subtitleDisplay.setGravity(Gravity.CENTER);
@@ -180,6 +217,29 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
                 LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM);
         addView(subtitleDisplay, layoutParams_txt);
+
+        mGestureDetector = new GestureDetector(context, mGestureListener);
+        //声音管理器
+        mAudioManager = ((AudioManager) context.getSystemService(Context.AUDIO_SERVICE));
+
+
+        mCurrentNet = new TextView(context);
+        mCurrentNet.setTextSize(24);
+        mCurrentNet.setTextColor(Color.RED);
+        mCurrentNet.setGravity(Gravity.CENTER);
+        LayoutParams layoutParams_net = new LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.MATCH_PARENT,
+                Gravity.CENTER);
+
+        addView(mCurrentNet,layoutParams_net);
+        mCurrentNet.setVisibility(GONE);
+
+        inflateSlide = LayoutInflater.from(context).inflate(R.layout.volum_bright,null,false);
+        mVolumBrightness = ((ImageView) inflateSlide.findViewById(R.id.volum_brightness));
+        mVProgressBar = ((ImageView) inflateSlide.findViewById(R.id.progressBar));
+        inflateSlide.setVisibility(GONE);
+        addView(inflateSlide,layoutParams_net);
     }
 
     public void setRenderView(IRenderView renderView) {
@@ -247,9 +307,17 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
     }
 
     private InfoSpeed mInfoSpeed;
-    public void setTcpView(TextView textView){
-        mInfoSpeed = new InfoSpeed(mMediaPlayer,textView);
+
+    public void setTcpView(TextView textView) {
+
+        if (mMediaPlayer != null){
+            LogUtil.i("InfoSpeed","setTcpView1");
+            mInfoSpeed = new InfoSpeed(mMediaPlayer, textView);
+        }
+        LogUtil.i("InfoSpeed","setTcpView2");
+
     }
+
     /**
      * Sets video path.
      *
@@ -319,7 +387,6 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
 
         try {
             mMediaPlayer = createPlayer(mSettings.getPlayer());
-
             // TODO: create SubtitleController in MediaPlayer, but we need
             // a context for the subtitle renderers
             final Context context = getContext();
@@ -334,6 +401,7 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
             mMediaPlayer.setOnBufferingUpdateListener(mBufferingUpdateListener);
             mMediaPlayer.setOnSeekCompleteListener(mSeekCompleteListener);
             mMediaPlayer.setOnTimedTextListener(mOnTimedTextListener);
+
             mCurrentBufferPercentage = 0;
             String scheme = mUri.getScheme();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
@@ -341,7 +409,7 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
                     (TextUtils.isEmpty(scheme) || scheme.equalsIgnoreCase("file"))) {
                 IMediaDataSource dataSource = new FileMediaDataSource(new File(mUri.toString()));
                 mMediaPlayer.setDataSource(dataSource);
-            }  else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
                 mMediaPlayer.setDataSource(mAppContext, mUri, mHeaders);
             } else {
                 mMediaPlayer.setDataSource(mUri.toString());
@@ -353,6 +421,9 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
             mMediaPlayer.prepareAsync();
             if (mHudViewHolder != null)
                 mHudViewHolder.setMediaPlayer(mMediaPlayer);
+
+
+            mInfoSpeed = new InfoSpeed(mMediaPlayer,mCurrentNet);
 
             // REMOVED: mPendingSubtitleTracks
 
@@ -489,7 +560,7 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
     private IMediaPlayer.OnInfoListener mInfoListener =
             new IMediaPlayer.OnInfoListener() {
                 public boolean onInfo(IMediaPlayer mp, int arg1, int arg2) {
-                    LogUtil.i("mInfoListener \n");
+                    LogUtil.i("VideoActivity","==mInfoListener==");
                     if (mOnInfoListener != null) {
                         mOnInfoListener.onInfo(mp, arg1, arg2);
                     }
@@ -497,16 +568,19 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
                         case IMediaPlayer.MEDIA_INFO_VIDEO_TRACK_LAGGING:
                             Log.d(TAG, "MEDIA_INFO_VIDEO_TRACK_LAGGING:");
                             break;
-                        case IMediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START://视频开始时//调用3、4
-                            Log.d(TAG, "MEDIA_INFO_VIDEO_RENDERING_START:");
+                        case IMediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START://视频开始时//2调用
+                            Log.d(TAG, "MEDIA_INFO_VIDEO_RENDERING_START:"+"arg1=="+arg1+"=arg2="+arg2);
                             break;
                         case IMediaPlayer.MEDIA_INFO_BUFFERING_START://调用1（可能调）
+                            LogUtil.i("VideoActivity","==MEDIA_INFO_BUFFERING_START==");
                             Log.d(TAG, "MEDIA_INFO_BUFFERING_START:");
+                            mCurrentNet.setVisibility(VISIBLE);
                             break;
                         case IMediaPlayer.MEDIA_INFO_BUFFERING_END://调用2（可能调）
+                            mCurrentNet.setVisibility(GONE);
                             Log.d(TAG, "MEDIA_INFO_BUFFERING_END:");
                             break;
-                        case IMediaPlayer.MEDIA_INFO_NETWORK_BANDWIDTH:
+                        case IMediaPlayer.MEDIA_INFO_NETWORK_BANDWIDTH://带宽
                             Log.d(TAG, "MEDIA_INFO_NETWORK_BANDWIDTH: " + arg2);
                             break;
                         case IMediaPlayer.MEDIA_INFO_BAD_INTERLEAVING:
@@ -526,12 +600,12 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
                             break;
                         case IMediaPlayer.MEDIA_INFO_VIDEO_ROTATION_CHANGED:
                             mVideoRotationDegree = arg2;
-                            Log.d(TAG, "MEDIA_INFO_VIDEO_ROTATION_CHANGED: " + arg2);
+                            Log.d(TAG, "MEDIA_INFO_VIDEO_ROTATION_CHANGED: " + arg2);//1.调用
                             if (mRenderView != null)
                                 mRenderView.setVideoRotation(arg2);
                             break;
                         case IMediaPlayer.MEDIA_INFO_AUDIO_RENDERING_START:
-                            Log.d(TAG, "MEDIA_INFO_AUDIO_RENDERING_START:");
+                            Log.d(TAG, "MEDIA_INFO_AUDIO_RENDERING_START:");//3调用
                             break;
                     }
                     return true;
@@ -541,7 +615,7 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
     private IMediaPlayer.OnErrorListener mErrorListener =
             new IMediaPlayer.OnErrorListener() {
                 public boolean onError(IMediaPlayer mp, int framework_err, int impl_err) {
-                    LogUtil.i("mErrorListener:Error:" + framework_err + "," + impl_err+"\n");
+                    LogUtil.i("mErrorListener:Error:" + framework_err + "," + impl_err + "\n");
                     Log.d(TAG, "Error: " + framework_err + "," + impl_err);
                     mCurrentState = STATE_ERROR;
                     mTargetState = STATE_ERROR;
@@ -594,8 +668,12 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
     private IMediaPlayer.OnBufferingUpdateListener mBufferingUpdateListener =
             new IMediaPlayer.OnBufferingUpdateListener() {
                 public void onBufferingUpdate(IMediaPlayer mp, int percent) {
-                    LogUtil.i("mBufferingUpdateListener \n");
+                    LogUtil.i("mBufferingUpdateListener ");
                     mCurrentBufferPercentage = percent;
+                    if (mp instanceof IjkMediaPlayer){
+                       long speed =  ((IjkMediaPlayer)mp).getTcpSpeed();
+                        LogUtil.i("mBufferingUpdateListener==speed"+speed);
+                    }
                 }
             };
 
@@ -612,7 +690,7 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
     private IMediaPlayer.OnTimedTextListener mOnTimedTextListener = new IMediaPlayer.OnTimedTextListener() {
         @Override
         public void onTimedText(IMediaPlayer mp, IjkTimedText text) {
-            LogUtil.i("mOnTimedTextListener"+text.getText());
+            LogUtil.i("mOnTimedTextListener" + text.getText());
             if (text != null) {
                 subtitleDisplay.setText(text.getText());
             }
@@ -747,13 +825,21 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
         }
     }
 
+    public void setHorizontalScreen(boolean horizontalScreen) {
+        this.horizontalScreen = horizontalScreen;
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
-        if (isInPlaybackState() && mMediaController != null) {
-            toggleMediaControlsVisiblity();
+        if (isInPlaybackState() && mMediaController != null) {//正常显示时
+//            toggleMediaControlsVisiblity();//切换控制是否显示
+
+            mGestureDetector.onTouchEvent(ev);
+            return true;
         }
         return false;
     }
+
 
     @Override
     public boolean onTrackballEvent(MotionEvent ev) {
@@ -909,7 +995,6 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
     }
 
 
-
     // REMOVED: getAudioSessionId();
     // REMOVED: onAttachedToWindow();
     // REMOVED: onDetachedFromWindow();
@@ -944,13 +1029,13 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
         return mCurrentAspectRatio;
     }
 
-    public void setFullScreen(){
+    public void setFullScreen() {
         if (mRenderView != null) {
             mRenderView.setAspectRatio(IRenderView.AR_ASPECT_FILL_PARENT);
         }
     }
 
-    public void setFitScreen(){
+    public void setFitScreen() {
         if (mRenderView != null) {
             mRenderView.setAspectRatio(IRenderView.AR_ASPECT_FIT_PARENT);
         }
@@ -1048,7 +1133,7 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
     public IMediaPlayer createPlayer(int playerType) {
         IMediaPlayer mediaPlayer = null;
 
-        LogUtil.i("playerType:",String.valueOf(playerType));
+        LogUtil.i("playerType:", String.valueOf(playerType));
         switch (playerType) {
             case Settings.PV_PLAYER__IjkExoMediaPlayer: {
 //                IjkExoMediaPlayer IjkExoMediaPlayer = new IjkExoMediaPlayer(mAppContext);
@@ -1288,5 +1373,208 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
 
     public int getSelectedTrack(int trackType) {
         return MediaPlayerCompat.getSelectedTrack(mMediaPlayer, trackType);
+    }
+
+
+    /**============================ 触屏操作处理 ============================*/
+
+    /**
+     * 手势监听
+     */
+    private GestureDetector.OnGestureListener mGestureListener = new GestureDetector.SimpleOnGestureListener() {
+        // 是否是按下的标识，默认为其他动作，true为按下标识，false为其他动作
+        private boolean isDownTouch;
+        // 是否声音控制,默认为亮度控制，true为声音控制，false为亮度控制
+        private boolean isVolume;
+        // 是否横向滑动，默认为纵向滑动，true为横向滑动，false为纵向滑动
+        private boolean isLandscape;
+        // 是否从弹幕编辑状态返回
+//        private boolean isRecoverFromDanmaku;
+
+        @Override
+        public boolean onDown(MotionEvent e) {
+            LogUtil.i(TAG, "====onDown====");
+            isDownTouch = true;
+            currentVolum = mAudioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+            if (currentVolum < 0) {
+                currentVolum = 0;
+            }
+            maxVolum = mAudioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+
+
+            if (mAttachActivity != null) {
+                //0 全暗 -1 系统设置 1 全亮
+                currentBrightness = mAttachActivity.getWindow().getAttributes().screenBrightness;
+                if (currentBrightness < 0.01f) {
+                    currentBrightness = 0.01f;
+                }
+            }
+//            isRecoverFromDanmaku = recoverFromEditVideo();
+            return super.onDown(e);
+        }
+
+
+
+
+        @Override
+        public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+            LogUtil.i(TAG, "onScroll");
+            if (!mIsForbidTouch && isInPlaybackState()) {
+                float mOldX = e1.getX(), mOldY = e1.getY();
+                float deltaY = mOldY - e2.getY();
+                float deltaX = mOldX - e2.getX();
+                if (isDownTouch) {
+                    // 判断左右或上下滑动
+                    isLandscape = Math.abs(distanceX) >= Math.abs(distanceY);
+                    // 判断是声音或亮度控制
+                    isVolume = mOldX > getResources().getDisplayMetrics().widthPixels * 0.5f;
+                    isDownTouch = false;
+                }
+
+                if (isLandscape) {
+                    //控制进度条
+                    _onProgressSlide(-deltaX / mVideoWidth);
+                } else {
+                    removeCallbacks(disable);
+                    float percent = deltaY / mVideoHeight;
+                    inflateSlide.setVisibility(VISIBLE);
+                    if (isVolume) {
+                        _onVolumeSlide(percent);
+                    } else {
+                        _onBrightnessSlide(percent);
+                    }
+                    postDelayed(disable,1000);
+                }
+            }
+
+            return super.onScroll(e1, e2, distanceX, distanceY);
+        }
+
+        @Override
+        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+            LogUtil.i(TAG, "==onFling==");
+            return super.onFling(e1, e2, velocityX, velocityY);
+        }
+
+        @Override
+        public boolean onSingleTapConfirmed(MotionEvent e) {
+            LogUtil.i(TAG, "==onSingleTapConfirmed===");
+            toggleMediaControlsVisiblity();//切换控制是否显示
+            return super.onSingleTapConfirmed(e);
+        }
+
+        @Override
+        public boolean onDoubleTap(MotionEvent e) {
+            LogUtil.i(TAG, "==onDoubleTap==");
+            if (isInPlaybackState()) {
+                if (mMediaPlayer.isPlaying()) {
+                    mMediaPlayer.pause();
+                    mCurrentState = STATE_PAUSED;
+                } else {
+                    mMediaPlayer.start();
+                    mCurrentState = STATE_PLAYING;
+                }
+            }
+                mMediaController.show();
+
+            return true;
+        }
+    };
+    private Runnable disable = new Runnable() {
+        @Override
+        public void run() {
+            inflateSlide.setVisibility(GONE);
+        }
+    };
+    /**
+     * 控制进度条
+     *
+     * @param v
+     */
+    private void _onProgressSlide(float percent) {
+        // FIXME: 2017/4/3 进度条
+
+        int position = getCurrentPosition();
+        long duration = getDuration();
+        // 单次拖拽最大时间差为100秒或播放时长的1/2
+        long deltaMax = Math.min(100 * 1000, duration / 2);
+        // 计算滑动时间
+        long delta = (long) (deltaMax * percent);
+        // 目标位置
+        mTargetPosition = delta + position;
+        if (mTargetPosition > duration) {
+            mTargetPosition = duration;
+        } else if (mTargetPosition <= 0) {
+            mTargetPosition = 0;
+        }
+        int deltaTime = (int) ((mTargetPosition - position) / 1000);
+        String desc;
+        // 对比当前位置来显示快进或后退
+        if (mTargetPosition > position) {
+            desc = generateTime(mTargetPosition) + "/" + generateTime(duration) + "\n" + "+" + deltaTime + "秒";
+        } else {
+            desc = generateTime(mTargetPosition) + "/" + generateTime(duration) + "\n" + deltaTime + "秒";
+        }
+//        _setFastForward(desc);
+
+    }
+
+    /**
+     * change the brightness
+     *
+     * @param percent
+     */
+    private void _onBrightnessSlide(float percent) {
+        //0 全暗 -1 系统设置 1 全亮
+        WindowManager.LayoutParams wl = mAttachActivity.getWindow().getAttributes();
+        wl.screenBrightness = currentBrightness + percent;
+        if (wl.screenBrightness > 1.0f) {
+            wl.screenBrightness = 1.0f;
+        }
+        if (wl.screenBrightness < 0.01f) {
+            wl.screenBrightness = 0.01f;
+        }
+        mAttachActivity.getWindow().setAttributes(wl);
+        //Fixme 调节亮度的布局
+        int index = (int) (wl.screenBrightness * 10);
+        int brightnessIndex = pic.length * index /10;
+        if (brightnessIndex >= pic.length){
+            brightnessIndex = pic.length - 1;
+        }
+        mVProgressBar.setImageResource(pic[brightnessIndex]);
+        mVolumBrightness.setImageResource(R.drawable.ic_brightness_7_black_24dp);
+
+    }
+
+    int [] pic = {R.mipmap.tips_progressbgar00,R.mipmap.tips_progressbgar01,
+            R.mipmap.tips_progressbgar02,R.mipmap.tips_progressbgar03,R.mipmap.tips_progressbgar04
+            ,R.mipmap.tips_progressbgar05,R.mipmap.tips_progressbgar06,R.mipmap.tips_progressbgar07
+            ,R.mipmap.tips_progressbgar08,R.mipmap.tips_progressbgar09,R.mipmap.tips_progressbgar10
+            ,R.mipmap.tips_progressbgar12};
+
+    /**
+     * change the volume
+     *
+     * @param percent
+     */
+    private void _onVolumeSlide(float percent) {
+        int index = (int) ((percent * maxVolum) + currentVolum);
+        if (index > maxVolum) {
+            index = maxVolum;
+        }
+        if (index < 0) {
+            index = 0;
+        }
+        mAudioManager.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0);
+        //FixMe 显示声音变化布局
+
+        int picIndex = pic.length * index / maxVolum;
+        LogUtil.i(TAG,"=picIndex="+picIndex);
+        if (picIndex >= pic.length){
+            picIndex = pic.length - 1;
+        }
+        mVProgressBar.setImageResource(pic[picIndex]);
+        mVolumBrightness.setImageResource(R.drawable.ic_volume_up_black_24dp);
+
     }
 }
